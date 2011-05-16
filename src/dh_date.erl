@@ -1,14 +1,15 @@
-%% @doc Format and Parse dates in erlang
+%% @doc Format dates in erlang
 %%
 %% Licensed under the DWTFYW License
-%% 
+%%
 %% This module formats erlang dates in the form
 %% {{Year, Month, Day}, {Hour, Minute, Second}}
 %% to printable strings, using (almost) equivalent
 %% formatting rules as http://uk.php.net/date
 %%
-%% It also has an unspecified date parser that
-%% will be added to
+%% erlang has no concept of timezone so the following
+%% formats are not implemented: B e I O P T Z
+%% formats c and r will also differ slightly
 %%
 %% See tests at bottom for examples
 
@@ -17,10 +18,13 @@
 
 -export([format/1, format/2]).
 -export([parse/1,  parse/2]).
+-export([nparse/1]).
 
--define( is_num(X),      (X >= $0 andalso X =< $9)).
--define( is_meridian(X), X==[]; X==[am]; X==[pm] ).
--define( is_sep(X),      X==$-; X==$/ ).
+-define( is_num(X),      (X >= $0 andalso X =< $9) ).
+-define( is_meridian(X), (X==[] orelse X==[am] orelse X==[pm]) ).
+-define( is_sep(X),      (X==$- orelse X==$/) ).
+
+-define(GREGORIAN_SECONDS_1970, 62167219200).
 
 -import(calendar,[last_day_of_the_month/2, day_of_the_week/1,
                   datetime_to_gregorian_seconds/1, date_to_gregorian_days/1,
@@ -54,7 +58,7 @@ format(Format, {_,_,_}=Now) ->
 format(Format, Date) ->
     format(Format, Date, []).
 
--spec parse(string()) -> datetime().
+-spec parse(string()) -> datetime() | {error, bad_date}.
 %% @doc parses the datetime from a string
 parse(Date) ->
     do_parse(Date, calendar:universal_time(),[]).
@@ -67,19 +71,28 @@ parse(Date, Now) ->
     do_parse(Date, Now, []).
 
 do_parse(Date, Now, Opts) ->
-%    io:format("~p",[tokenise(string:to_upper(Date), [])]),
     case parse(tokenise(string:to_upper(Date), []), Now, Opts) of
         {error, bad_date} ->
             {error, bad_date};
-        {D1, T1} = {{Y, M, D}, {H, M1, S}} when is_number(Y),  is_number(M),
-                                                is_number(D),  is_number(H),
-                                                is_number(M1), is_number(S) ->
+        {D1, T1} = {{Y, M, D}, {H, M1, S}}
+        when is_number(Y),  is_number(M),
+             is_number(D),  is_number(H),
+             is_number(M1), is_number(S) ->
             case calendar:valid_date(D1) of
                 true  -> {D1, T1};
                 false -> {error, bad_date}
             end;
         _ -> {error, bad_date}
-    end.              
+    end.
+
+-spec nparse(string()) -> now().
+%% @doc parses the datetime from a string into 'now' format
+nparse(Date) ->
+    DateTime = parse(Date),
+    GSeconds = calendar:datetime_to_gregorian_seconds(DateTime),
+    ESeconds = GSeconds - ?GREGORIAN_SECONDS_1970,
+    {ESeconds div 1000000, ESeconds rem 1000000, 0}.
+
 
 %%
 %% LOCAL FUNCTIONS
@@ -88,8 +101,8 @@ do_parse(Date, Now, Opts) ->
 %% Times - 21:45, 13:45:54, 13:15PM etc
 parse([Hour,$:,Min,$:,Sec | PAM], {Date, _Time}, _O) when ?is_meridian(PAM) ->
     {Date, {hour(Hour, PAM), Min, Sec}};
-parse([Hour,$:,Min | PAM], {Date, {_H,_M,S}}, _Opts) when ?is_meridian(PAM) ->
-    {Date, {hour(Hour, PAM), Min, S}};
+parse([Hour,$:,Min | PAM], {Date, _Time}, _Opts) when ?is_meridian(PAM) ->
+    {Date, {hour(Hour, PAM), Min, 0}};
 
 %% Dates 23/april/1963
 parse([Day,Month,Year], {_Date, Time}, _Opts)  ->
@@ -98,20 +111,19 @@ parse([Day,X,Month,X,Year], {_Date, Time}, _Opts) when ?is_sep(X) ->
     {{Year, Month, Day}, Time};
 
 %% Date/Times 22 Aug 2008 6:35 PM
-parse([Day,X,Month,X,Year,Hour,$:,Min | PAM], {_Date, {_H,_M, Sec}}, _Opts)
-  when ?is_meridian(PAM), ?is_sep(X) ->
-    {{Year, Month, Day}, {hour(Hour, PAM), Min, Sec}};
+parse([Day,X,Month,X,Year,Hour,$:,Min | PAM], _Date, _Opts)
+  when ?is_meridian(PAM) andalso ?is_sep(X) ->
+    {{Year, Month, Day}, {hour(Hour, PAM), Min, 0}};
 parse([Day,X,Month,X,Year,Hour,$:,Min,$:,Sec | PAM], _Now, _Opts)
-  when ?is_meridian(PAM), ?is_sep(X) ->
+  when ?is_meridian(PAM) andalso ?is_sep(X) ->
     {{Year, Month, Day}, {hour(Hour, PAM), Min, Sec}};
 
-parse([Day,Month,Year,Hour,$:,Min | PAM], {_Date, {_H,_M, Sec}}, _Opts)
+parse([Day,Month,Year,Hour,$:,Min | PAM], _Now, _Opts)
   when ?is_meridian(PAM) ->
-    {{Year, Month, Day}, {hour(Hour, PAM), Min, Sec}};
+    {{Year, Month, Day}, {hour(Hour, PAM), Min, 0}};
 parse([Day,Month,Year,Hour,$:,Min,$:,Sec | PAM], _Now, _Opts)
   when ?is_meridian(PAM) ->
     {{Year, Month, Day}, {hour(Hour, PAM), Min, Sec}};
-
 
 parse(_Tokens, _Now, _Opts) ->
     {error, bad_date}.
@@ -145,12 +157,15 @@ tokenise("JUL"++Rest, Acc)       -> tokenise(Rest, [7 | Acc]);
 tokenise("AUGUST"++Rest, Acc)    -> tokenise(Rest, [8 | Acc]);
 tokenise("AUG"++Rest, Acc)       -> tokenise(Rest, [8 | Acc]);
 tokenise("SEPTEMBER"++Rest, Acc) -> tokenise(Rest, [9 | Acc]);
+tokenise("SEPT"++Rest, Acc)      -> tokenise(Rest, [9 | Acc]);
 tokenise("SEP"++Rest, Acc)       -> tokenise(Rest, [9 | Acc]);
 tokenise("OCTOBER"++Rest, Acc)   -> tokenise(Rest, [10 | Acc]);
 tokenise("OCT"++Rest, Acc)       -> tokenise(Rest, [10 | Acc]);
 tokenise("NOVEMBER"++Rest, Acc)  -> tokenise(Rest, [11 | Acc]);
+tokenise("NOVEM"++Rest, Acc)  -> tokenise(Rest, [11 | Acc]);
 tokenise("NOV"++Rest, Acc)       -> tokenise(Rest, [11 | Acc]);
 tokenise("DECEMBER"++Rest, Acc)  -> tokenise(Rest, [12 | Acc]);
+tokenise("DECEM"++Rest, Acc)     -> tokenise(Rest, [12 | Acc]);
 tokenise("DEC"++Rest, Acc)       -> tokenise(Rest, [12 | Acc]);
 
 tokenise([$: | Rest], Acc) -> tokenise(Rest, [ $: | Acc]);
@@ -159,16 +174,50 @@ tokenise([$- | Rest], Acc) -> tokenise(Rest, [ $- | Acc]);
 tokenise("AM"++Rest, Acc)  -> tokenise(Rest, [am | Acc]);
 tokenise("PM"++Rest, Acc)  -> tokenise(Rest, [pm | Acc]);
 
+%% Postel's Law
+%%
+%%  be conservative in what you do,
+%%  be liberal in what you accept from others.
+%%
+%% See RFC 793 Section 2.10 http://tools.ietf.org/html/rfc793
+%%
+%% Mebbies folk want to include Saturday etc in a date, nae borra
+tokenise("MONDAY"++Rest, Acc)    -> tokenise(Rest, Acc);
+tokenise("MON"++Rest, Acc)       -> tokenise(Rest, Acc);
+tokenise("TUESDAY"++Rest, Acc)   -> tokenise(Rest, Acc);
+tokenise("TUES"++Rest, Acc)      -> tokenise(Rest, Acc);
+tokenise("TUE"++Rest, Acc)       -> tokenise(Rest, Acc);
+tokenise("WEDNESDAY"++Rest, Acc) -> tokenise(Rest, Acc);
+tokenise("WEDS"++Rest, Acc)      -> tokenise(Rest, Acc);
+tokenise("WED"++Rest, Acc)       -> tokenise(Rest, Acc);
+tokenise("THURSDAY"++Rest, Acc)  -> tokenise(Rest, Acc);
+tokenise("THURS"++Rest, Acc)     -> tokenise(Rest, Acc);
+tokenise("THUR"++Rest, Acc)      -> tokenise(Rest, Acc);
+tokenise("THU"++Rest, Acc)       -> tokenise(Rest, Acc);
+tokenise("FRIDAY"++Rest, Acc)    -> tokenise(Rest, Acc);
+tokenise("FRI"++Rest, Acc)       -> tokenise(Rest, Acc);
+tokenise("SATURDAY"++Rest, Acc)  -> tokenise(Rest, Acc);
+tokenise("SAT"++Rest, Acc)       -> tokenise(Rest, Acc);
+tokenise("SUNDAY"++Rest, Acc)    -> tokenise(Rest, Acc);
+tokenise("SUN"++Rest, Acc)       -> tokenise(Rest, Acc);
+
+%% Hmm Excel reports GMT in times so nuke that too
+tokenise("GMT"++Rest, Acc) -> tokenise(Rest, Acc);
+tokenise("UTC"++Rest, Acc) -> tokenise(Rest, Acc);
+tokenise("DST"++Rest, Acc) -> tokenise(Rest, Acc);  % daylight saving time
+
+tokenise([$, | Rest], Acc) -> tokenise(Rest, Acc);
 tokenise([32 | Rest], Acc) -> tokenise(Rest, Acc);          % Spaces
-tokenise("TH"++Rest, Acc)  -> tokenise(Rest, Acc);         
+tokenise("TH"++Rest, Acc)  -> tokenise(Rest, Acc);
 tokenise("ND"++Rest, Acc)  -> tokenise(Rest, Acc);
 tokenise("ST"++Rest, Acc)  -> tokenise(Rest, Acc);
 tokenise("OF"++Rest, Acc)  -> tokenise(Rest, Acc);
 
 tokenise([Else | Rest], Acc) ->
+    io:format("~p is a bad token~n", [Else]),
     tokenise(Rest, [{bad_token, Else} | Acc]).
 
-hour(Hour, []) -> Hour;
+hour(Hour, [])   -> Hour;
 hour(Hour, [am]) -> Hour;
 hour(Hour, [pm]) -> Hour+12.
 
@@ -235,6 +284,8 @@ format([$A|T], {_,{H,_,_}}=Dt, Acc) when H > 12 ->
     format(T, Dt, ["PM"|Acc]);
 format([$A|T], Dt, Acc) ->
     format(T, Dt, ["AM"|Acc]);
+format([$g|T], {_,{H,_,_}}=Dt, Acc) when H == 12; H == 0 ->
+    format(T, Dt, ["12"|Acc]);
 format([$g|T], {_,{H,_,_}}=Dt, Acc) when H > 12 ->
     format(T, Dt, [itol(H-12)|Acc]);
 format([$g|T], {_,{H,_,_}}=Dt, Acc) ->
@@ -275,26 +326,26 @@ format([H|T], Date, Acc) ->
 
 %% @doc days in year
 -spec days_in_year(date()) -> integer().
-days_in_year({Y,_,_}=Date) -> 
-    date_to_gregorian_days(Date) - 
+days_in_year({Y,_,_}=Date) ->
+    date_to_gregorian_days(Date) -
         date_to_gregorian_days({Y,1,1}).
 
 %% @doc is a leap year
 -spec is_leap(year()) -> 1|0.
-is_leap(Y) ->    
+is_leap(Y) ->
     case is_leap_year(Y) of
         true  -> 1;
         false -> 0
     end.
 
-%% @doc Made up numeric day of the week 
+%% @doc Made up numeric day of the week
 %%      (0 Sunday -> 6 Saturday)
 -spec to_w(daynum()) -> integer().
 to_w(7) -> 0;
 to_w(X) -> X.
 
 -spec suffix(day()) -> string().
-%% @doc English ordinal suffix for the day of the 
+%% @doc English ordinal suffix for the day of the
 %%      month, 2 characters
 suffix(1) -> "st";
 suffix(2) -> "nd";
@@ -303,7 +354,7 @@ suffix(_) -> "th".
 
 -spec sdayd(date()) -> string().
 %% @doc A textual representation of a day, three letters
-sdayd({Y,M,D}) -> 
+sdayd({Y,M,D}) ->
     sday(day_of_the_week({Y,M,D})).
 
 -spec sday(daynum()) -> string().
@@ -327,7 +378,7 @@ day(6) -> "Saturday";
 day(7) -> "Sunday".
 
 -spec smonth(month()) -> string().
-%% @doc A short textual representation of a 
+%% @doc A short textual representation of a
 %%      month, three letters
 smonth(1)  -> "Jan";
 smonth(2)  -> "Feb";
@@ -362,7 +413,7 @@ month(12) -> "December".
 %%      http://en.wikipedia.org/wiki/ISO_week_date
 iso_week(Date) ->
     Week = iso_week_one(iso_year(Date)),
-    Days = date_to_gregorian_days(Date) - 
+    Days = date_to_gregorian_days(Date) -
         date_to_gregorian_days(Week),
     trunc((Days / 7) + 1).
 
@@ -370,7 +421,7 @@ iso_week(Date) ->
 %% @doc The year number as defined in ISO 8601
 %%      http://en.wikipedia.org/wiki/ISO_week_date
 iso_year({Y, _M, _D}=Dt) ->
-    case Dt >= {Y, 12, 29} of 
+    case Dt >= {Y, 12, 29} of
         true ->
             case Dt < iso_week_one(Y+1) of
                 true  -> Y;
@@ -384,7 +435,7 @@ iso_year({Y, _M, _D}=Dt) ->
     end.
 
 -spec iso_week_one(year()) -> date().
-%% @doc The date of the the first day of the first week 
+%% @doc The date of the the first day of the first week
 %%      in the ISO calendar
 iso_week_one(Y) ->
     Day1 = calendar:day_of_the_week({Y,1,4}),
@@ -393,20 +444,22 @@ iso_week_one(Y) ->
 
 -spec itol(integer()) -> list().
 %% @doc short hand
-itol(X) -> 
+itol(X) ->
     integer_to_list(X).
 
 -spec pad2(integer()) -> list().
 %% @doc int padded with 0 to make sure its 2 chars
-pad2(X) -> 
-    io_lib:format("~2.10.0B",[X]).
+pad2(X) when is_integer(X) ->
+    io_lib:format("~2.10.0B",[X]);
+pad2(X) when is_float(X) ->
+    io_lib:format("~2.10.0B",[trunc(X)]).
 
 ltoi(X) ->
     list_to_integer(X).
 
 %%
 %% TEST FUNCTIONS
-%% 
+%%
 %% c(dh_date,[{d,'TEST'}]).
 %-define(NOTEST, 1).
 
@@ -415,79 +468,116 @@ ltoi(X) ->
 -define(DATE, {{2001,3,10},{17,16,17}}).
 -define(ISO,  "o \\WW").
 
-basic_format_test_() -> [                         
-  ?_assertEqual(format("F j, Y, g:i a",?DATE), "March 10, 2001, 5:16 pm"),
-  ?_assertEqual(format("m.d.y",?DATE),         "03.10.01"),
-  ?_assertEqual(format("j, n, Y",?DATE),       "10, 3, 2001"),
-  ?_assertEqual(format("Ymd",?DATE),           "20010310"),
-  ?_assertEqual(format("H:i:s",?DATE),          "17:16:17"),
-  ?_assertEqual(format("z",?DATE),              "68"),
-  ?_assertEqual(format("D M j G:i:s Y",?DATE), "Sat Mar 10 17:16:17 2001"),
-                         
-  ?_assertEqual(format("h-i-s, j-m-y, it is w Day",?DATE),
-               "05-16-17, 10-03-01, 1631 1617 6 Satpm01"),
-  ?_assertEqual(format("\\i\\t \\i\\s \\t\\h\\e\\ jS \\d\\a\\y.",?DATE),
-               "it is the 10th day."),
-  ?_assertEqual(format("H:m:s \\m \\i\\s \\m\\o\\n\\t\\h",?DATE),
-               "17:03:17 m is month")
-].
+basic_format_test_() ->
+    [
+     ?_assertEqual(format("F j, Y, g:i a",?DATE), "March 10, 2001, 5:16 pm"),
+     ?_assertEqual(format("m.d.y",?DATE),         "03.10.01"),
+     ?_assertEqual(format("j, n, Y",?DATE),       "10, 3, 2001"),
+     ?_assertEqual(format("Ymd",?DATE),           "20010310"),
+     ?_assertEqual(format("H:i:s",?DATE),          "17:16:17"),
+     ?_assertEqual(format("z",?DATE),              "68"),
+     ?_assertEqual(format("D M j G:i:s Y",?DATE), "Sat Mar 10 17:16:17 2001"),
 
-basic_parse_test_() -> [
-  ?_assertEqual({{2008,8,22}, {17,16,17}},
-                parse("22nd of August 2008", ?DATE)),
-  ?_assertEqual({{2008,8,22}, {6,35,17}},
-                parse("22-Aug-2008 6:35 AM", ?DATE)),
-  ?_assertEqual({{2008,8,22}, {6,35,12}},
-                parse("22-Aug-2008 6:35:12 AM", ?DATE)),
-  ?_assertEqual({{2008,8,22}, {6,35,17}},
-                parse("22/Aug/2008 6:35 AM", ?DATE)),
-  ?_assertEqual({{2008,8,22}, {6,35,17}},
-                parse("22/August/2008 6:35 AM", ?DATE)),
-  ?_assertEqual({{2008,8,22}, {6,35,17}},
-                parse("22 August 2008 6:35 AM", ?DATE)),
-  ?_assertEqual({{2008,8,22}, {6,35,17}},
-                parse("22 Aug 2008 6:35AM", ?DATE)),
-  ?_assertEqual({{2008,8,22}, {6,35,17}},
-                parse("22 Aug 2008 6:35 AM", ?DATE)),
-  ?_assertEqual({{2008,8,22}, {6,35,17}},
-                parse("22 Aug 2008 6:35", ?DATE)),
-  ?_assertEqual({{2008,8,22}, {18,35,17}},
-                parse("22 Aug 2008 6:35 PM", ?DATE)),
-  ?_assertEqual({{2001,3,10}, {11,15,17}},
-                parse("11:15", ?DATE)),
-  ?_assertEqual({{2001,3,10}, {1,15,17}},
-                parse("1:15", ?DATE)),
-  ?_assertEqual({{2001,3,10}, {1,15,17}},
-                parse("1:15 am", ?DATE)),
-  ?_assertEqual({{2001,3,10}, {3,45,39}},
-                parse("3:45:39", ?DATE)),
-  ?_assertEqual({{1963,4,23}, {17,16,17}},
-                parse("23/4/1963", ?DATE)),
-  ?_assertEqual({{1963,4,23}, {17,16,17}},
-                parse("23/april/1963", ?DATE)),
-  ?_assertEqual({{1963,4,23}, {17,16,17}},
-                parse("23/apr/1963", ?DATE)),
-  ?_assertEqual({error, bad_date},
-                parse("23/ap/195", ?DATE)),
-  ?_assertEqual({{2001,3,10}, {6,45,17}},
-                parse("6:45 am", ?DATE)),
-  ?_assertEqual({{2001,3,10}, {18,45,17}},
-                parse("6:45 PM", ?DATE)),
-  ?_assertEqual({{2001,3,10}, {18,45,17}},
-                parse("6:45 PM ", ?DATE))
-].
+     ?_assertEqual(format("h-i-s, j-m-y, it is w Day",?DATE),
+                   "05-16-17, 10-03-01, 1631 1617 6 Satpm01"),
+     ?_assertEqual(format("\\i\\t \\i\\s \\t\\h\\e\\ jS \\d\\a\\y.",?DATE),
+                   "it is the 10th day."),
+     ?_assertEqual(format("H:m:s \\m \\i\\s \\m\\o\\n\\t\\h",?DATE),
+                   "17:03:17 m is month")
+    ].
 
- iso_test_() -> [
-   ?_assertEqual("2004 W53",format(?ISO,{{2005,1,1},  {1,1,1}})),
-   ?_assertEqual("2004 W53",format(?ISO,{{2005,1,2},  {1,1,1}})),
-   ?_assertEqual("2005 W52",format(?ISO,{{2005,12,31},{1,1,1}})), 
-   ?_assertEqual("2007 W01",format(?ISO,{{2007,1,1},  {1,1,1}})),
-   ?_assertEqual("2007 W52",format(?ISO,{{2007,12,30},{1,1,1}})),
-   ?_assertEqual("2008 W01",format(?ISO,{{2007,12,31},{1,1,1}})),
-   ?_assertEqual("2008 W01",format(?ISO,{{2008,1,1},  {1,1,1}})),
-   ?_assertEqual("2009 W01",format(?ISO,{{2008,12,29},{1,1,1}})),
-   ?_assertEqual("2009 W01",format(?ISO,{{2008,12,31},{1,1,1}})),
-   ?_assertEqual("2009 W01",format(?ISO,{{2009,1,1},  {1,1,1}})),
-   ?_assertEqual("2009 W53",format(?ISO,{{2009,12,31},{1,1,1}})),
-   ?_assertEqual("2009 W53",format(?ISO,{{2010,1,3},  {1,1,1}}))
- ].
+basic_parse_test_() ->
+    [
+     ?_assertEqual({{2008,8,22}, {17,16,17}},
+                   parse("22nd of August 2008", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("22-Aug-2008 6:35 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,12}},
+                   parse("22-Aug-2008 6:35:12 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("22/Aug/2008 6:35 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("22/August/2008 6:35 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("22 August 2008 6:35 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("22 Aug 2008 6:35AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("22 Aug 2008 6:35 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("22 Aug 2008 6:35", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {18,35,0}},
+                   parse("22 Aug 2008 6:35 PM", ?DATE)),
+     ?_assertEqual({{2001,3,10}, {11,15,0}},
+                   parse("11:15", ?DATE)),
+     ?_assertEqual({{2001,3,10}, {1,15,0}},
+                   parse("1:15", ?DATE)),
+     ?_assertEqual({{2001,3,10}, {1,15,0}},
+                   parse("1:15 am", ?DATE)),
+     ?_assertEqual({{2001,3,10}, {3,45,39}},
+                   parse("3:45:39", ?DATE)),
+     ?_assertEqual({{1963,4,23}, {17,16,17}},
+                   parse("23/4/1963", ?DATE)),
+     ?_assertEqual({{1963,4,23}, {17,16,17}},
+                   parse("23/april/1963", ?DATE)),
+     ?_assertEqual({{1963,4,23}, {17,16,17}},
+                   parse("23/apr/1963", ?DATE)),
+     ?_assertEqual({error, bad_date},
+                   parse("23/ap/195", ?DATE)),
+     ?_assertEqual({{2001,3,10}, {6,45,0}},
+                   parse("6:45 am", ?DATE)),
+     ?_assertEqual({{2001,3,10}, {18,45,0}},
+                   parse("6:45 PM", ?DATE)),
+     ?_assertEqual({{2001,3,10}, {18,45,0}},
+                   parse("6:45 PM ", ?DATE))
+    ].
+
+parse_with_days_test_() ->
+    [
+     ?_assertEqual({{2008,8,22}, {17,16,17}},
+                   parse("Sat 22nd of August 2008", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("Sat, 22-Aug-2008 6:35 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,12}},
+                   parse("Sunday 22-Aug-2008 6:35:12 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("Sun 22/Aug/2008 6:35 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("THURSDAY, 22/August/2008 6:35 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("THU 22 August 2008 6:35 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("FRi 22 Aug 2008 6:35AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("Wednesday 22 Aug 2008 6:35 AM", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {6,35,0}},
+                   parse("Monday 22 Aug 2008 6:35", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {18,35,0}},
+                   parse("Mon, 22 Aug 2008 6:35 PM", ?DATE))
+    ].
+
+parse_with_TZ_test_() ->
+    [
+     ?_assertEqual({{2008,8,22}, {17,16,17}},
+                   parse("Sat 22nd of August 2008 GMT", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {17,16,17}},
+                   parse("Sat 22nd of August 2008 UTC", ?DATE)),
+     ?_assertEqual({{2008,8,22}, {17,16,17}},
+                   parse("Sat 22nd of August 2008 DST", ?DATE))
+    ].
+
+iso_test_() ->
+    [
+     ?_assertEqual("2004 W53",format(?ISO,{{2005,1,1},  {1,1,1}})),
+     ?_assertEqual("2004 W53",format(?ISO,{{2005,1,2},  {1,1,1}})),
+     ?_assertEqual("2005 W52",format(?ISO,{{2005,12,31},{1,1,1}})),
+     ?_assertEqual("2007 W01",format(?ISO,{{2007,1,1},  {1,1,1}})),
+     ?_assertEqual("2007 W52",format(?ISO,{{2007,12,30},{1,1,1}})),
+     ?_assertEqual("2008 W01",format(?ISO,{{2007,12,31},{1,1,1}})),
+     ?_assertEqual("2008 W01",format(?ISO,{{2008,1,1},  {1,1,1}})),
+     ?_assertEqual("2009 W01",format(?ISO,{{2008,12,29},{1,1,1}})),
+     ?_assertEqual("2009 W01",format(?ISO,{{2008,12,31},{1,1,1}})),
+     ?_assertEqual("2009 W01",format(?ISO,{{2009,1,1},  {1,1,1}})),
+     ?_assertEqual("2009 W53",format(?ISO,{{2009,12,31},{1,1,1}})),
+     ?_assertEqual("2009 W53",format(?ISO,{{2010,1,3},  {1,1,1}}))
+    ].
