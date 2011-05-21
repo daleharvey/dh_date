@@ -214,7 +214,6 @@ tokenise("ST"++Rest, Acc)  -> tokenise(Rest, Acc);
 tokenise("OF"++Rest, Acc)  -> tokenise(Rest, Acc);
 
 tokenise([Else | Rest], Acc) ->
-    io:format("~p is a bad token~n", [Else]),
     tokenise(Rest, [{bad_token, Else} | Acc]).
 
 hour(Hour, [])   -> Hour;
