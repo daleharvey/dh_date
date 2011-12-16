@@ -144,6 +144,7 @@ tokenise([N1 | Rest], Acc)
 tokenise("JANUARY"++Rest, Acc)   -> tokenise(Rest, [1 | Acc]);
 tokenise("JAN"++Rest, Acc)       -> tokenise(Rest, [1 | Acc]);
 tokenise("FEBUARY"++Rest, Acc)   -> tokenise(Rest, [2 | Acc]);
+tokenise("FEBRUARY"++Rest, Acc)  -> tokenise(Rest, [2 | Acc]);
 tokenise("FEB"++Rest, Acc)       -> tokenise(Rest, [2 | Acc]);
 tokenise("MARCH"++Rest, Acc)     -> tokenise(Rest, [3 | Acc]);
 tokenise("MAR"++Rest, Acc)       -> tokenise(Rest, [3 | Acc]);
@@ -162,7 +163,7 @@ tokenise("SEP"++Rest, Acc)       -> tokenise(Rest, [9 | Acc]);
 tokenise("OCTOBER"++Rest, Acc)   -> tokenise(Rest, [10 | Acc]);
 tokenise("OCT"++Rest, Acc)       -> tokenise(Rest, [10 | Acc]);
 tokenise("NOVEMBER"++Rest, Acc)  -> tokenise(Rest, [11 | Acc]);
-tokenise("NOVEM"++Rest, Acc)  -> tokenise(Rest, [11 | Acc]);
+tokenise("NOVEM"++Rest, Acc)     -> tokenise(Rest, [11 | Acc]);
 tokenise("NOV"++Rest, Acc)       -> tokenise(Rest, [11 | Acc]);
 tokenise("DECEMBER"++Rest, Acc)  -> tokenise(Rest, [12 | Acc]);
 tokenise("DECEM"++Rest, Acc)     -> tokenise(Rest, [12 | Acc]);
