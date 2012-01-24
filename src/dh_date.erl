@@ -22,7 +22,7 @@
 
 -define( is_num(X),      (X >= $0 andalso X =< $9) ).
 -define( is_meridian(X), (X==[] orelse X==[am] orelse X==[pm]) ).
--define( is_sep(X),      (X==$- orelse X==$/) ).
+-define( is_sep(X),      (X==$- orelse X==$/ orelse X==$\.) ).
 
 -define(GREGORIAN_SECONDS_1970, 62167219200).
 
@@ -172,6 +172,7 @@ tokenise("DEC"++Rest, Acc)       -> tokenise(Rest, [12 | Acc]);
 tokenise([$: | Rest], Acc) -> tokenise(Rest, [ $: | Acc]);
 tokenise([$/ | Rest], Acc) -> tokenise(Rest, [ $/ | Acc]);
 tokenise([$- | Rest], Acc) -> tokenise(Rest, [ $- | Acc]);
+tokenise([$\. | Rest], Acc) -> tokenise(Rest, [ $\. | Acc]);
 tokenise("AM"++Rest, Acc)  -> tokenise(Rest, [am | Acc]);
 tokenise("PM"++Rest, Acc)  -> tokenise(Rest, [pm | Acc]);
 
@@ -518,6 +519,8 @@ basic_parse_test_() ->
                    parse("3:45:39", ?DATE)),
      ?_assertEqual({{1963,4,23}, {17,16,17}},
                    parse("23/4/1963", ?DATE)),
+     ?_assertEqual({{1963,4,23}, {17,16,17}},
+                   parse("23.4.1963", ?DATE)),
      ?_assertEqual({{1963,4,23}, {17,16,17}},
                    parse("23/april/1963", ?DATE)),
      ?_assertEqual({{1963,4,23}, {17,16,17}},
