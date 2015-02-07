@@ -13,16 +13,24 @@
 %%
 %% See tests at bottom for examples
 
+%% MW: Added support for ISO8601 and "Y-M-D H:I:S"
+
 -module(dh_date).
 -author("Dale Harvey <dale@hypernumbers.com>").
+-author("Marc Worrell <marc@worrell.nl>").
 
 -export([format/1, format/2]).
 -export([parse/1,  parse/2]).
 -export([nparse/1]).
 
+-export([tokenise/2]).
+
 -define( is_num(X),      (X >= $0 andalso X =< $9) ).
 -define( is_meridian(X), (X==[] orelse X==[am] orelse X==[pm]) ).
 -define( is_sep(X),      (X==$- orelse X==$/ orelse X==$\.) ).
+
+-define( is_day(X),      (X >= 1 andalso X =< 31)).
+-define( is_month(X),    (X >= 1 andalso X =< 12)).
 
 -define(GREGORIAN_SECONDS_1970, 62167219200).
 
@@ -58,8 +66,10 @@ format(Format, {_,_,_}=Now) ->
 format(Format, Date) ->
     format(Format, Date, []).
 
--spec parse(string()) -> datetime() | {error, bad_date}.
+-spec parse(string() | binary()) -> datetime() | {error, bad_date}.
 %% @doc parses the datetime from a string
+parse(Date) when is_binary(Date) ->
+    parse(binary_to_list(Date));
 parse(Date) ->
     do_parse(Date, calendar:universal_time(),[]).
 
@@ -72,17 +82,18 @@ parse(Date, Now) ->
 
 do_parse(Date, Now, Opts) ->
     case parse(tokenise(string:to_upper(Date), []), Now, Opts) of
-        {error, bad_date} ->
-            {error, bad_date};
+        {error, Reason} ->
+            {error, Reason};
         {D1, T1} = {{Y, M, D}, {H, M1, S}}
-        when is_number(Y),  is_number(M),
-             is_number(D),  is_number(H),
+        when is_number(Y),  ?is_month(M),
+             ?is_day(D),  is_number(H),
              is_number(M1), is_number(S) ->
             case calendar:valid_date(D1) of
                 true  -> {D1, T1};
                 false -> {error, bad_date}
             end;
-        _ -> {error, bad_date}
+        _ -> 
+            {error, bad_date}
     end.
 
 -spec nparse(string()) -> now().
@@ -105,25 +116,48 @@ parse([Hour,$:,Min | PAM], {Date, _Time}, _Opts) when ?is_meridian(PAM) ->
     {Date, {hour(Hour, PAM), Min, 0}};
 
 %% Dates 23/april/1963
-parse([Day,Month,Year], {_Date, Time}, _Opts)  ->
-    {{Year, Month, Day}, Time};
-parse([Day,X,Month,X,Year], {_Date, Time}, _Opts) when ?is_sep(X) ->
-    {{Year, Month, Day}, Time};
+parse([Day,Month,Year], {_Date, Time}, _Opts) when ?is_day(Day), ?is_month(Month) ->
+    {{to_year(Year), Month, Day}, Time};
+parse([Day,X,Month,X,Year], {_Date, Time}, _Opts) when ?is_sep(X), ?is_day(Day), ?is_month(Month) ->
+    {{to_year(Year), Month, Day}, Time};
+
+parse([Year,Day,Month], {_Date, Time}, _Opts) when ?is_day(Day), ?is_month(Month) ->
+    {{to_year(Year), Month, Day}, Time};
+parse([Year,X,Month,X,Day], {_Date, Time}, _Opts) when ?is_sep(X), ?is_day(Day), ?is_month(Month) ->
+    {{to_year(Year), Month, Day}, Time};
 
 %% Date/Times 22 Aug 2008 6:35 PM
 parse([Day,X,Month,X,Year,Hour,$:,Min | PAM], _Date, _Opts)
-  when ?is_meridian(PAM) andalso ?is_sep(X) ->
-    {{Year, Month, Day}, {hour(Hour, PAM), Min, 0}};
+  when ?is_meridian(PAM), ?is_sep(X), ?is_day(Day), ?is_month(Month) ->
+    {{to_year(Year), Month, Day}, {hour(Hour, PAM), Min, 0}};
 parse([Day,X,Month,X,Year,Hour,$:,Min,$:,Sec | PAM], _Now, _Opts)
-  when ?is_meridian(PAM) andalso ?is_sep(X) ->
-    {{Year, Month, Day}, {hour(Hour, PAM), Min, Sec}};
+  when ?is_meridian(PAM), ?is_sep(X), ?is_day(Day), ?is_month(Month) ->
+    {{to_year(Year), Month, Day}, {hour(Hour, PAM), Min, Sec}};
 
 parse([Day,Month,Year,Hour,$:,Min | PAM], _Now, _Opts)
-  when ?is_meridian(PAM) ->
-    {{Year, Month, Day}, {hour(Hour, PAM), Min, 0}};
+  when ?is_meridian(PAM), ?is_day(Day), ?is_month(Month) ->
+    {{to_year(Year), Month, Day}, {hour(Hour, PAM), Min, 0}};
 parse([Day,Month,Year,Hour,$:,Min,$:,Sec | PAM], _Now, _Opts)
-  when ?is_meridian(PAM) ->
-    {{Year, Month, Day}, {hour(Hour, PAM), Min, Sec}};
+  when ?is_meridian(PAM), ?is_day(Day), ?is_month(Month) ->
+    {{to_year(Year), Month, Day}, {hour(Hour, PAM), Min, Sec}};
+
+%% Date/Times 2008-08-22 18:35:00
+parse([Year,$-,Month,$-,Day,Hour,$:,Min,$:,Sec], _, _Opts) ->
+    {{to_year(Year),Month,Day}, {Hour,Min,Sec}};
+parse([Year,$-,Month,$-,Day,Hour,$:,Min], _, _Opts) ->
+    {{to_year(Year),Month,Day}, {Hour,Min,0}};
+
+
+%% ISO8601: "2012-04-23T17:04:29+02:00"
+parse([Year,$-,Month,$-,Day,$T,Hour,$:,Min,$:,Sec,PM,TZHour,$:,TZMin], _, _Opts) when PM =:= $-; PM =:= $+ ->
+    LocalSecs = calendar:datetime_to_gregorian_seconds({{Year, Month, Day}, {Hour, Min, Sec}}),
+    TZDiff = TZHour * 3600 + TZMin * 60,
+    UniversalSecs = case PM of $- -> LocalSecs+TZDiff; $+ -> LocalSecs-TZDiff end,
+    calendar:universal_time_to_local_time(calendar:gregorian_seconds_to_datetime(UniversalSecs));
+parse([Year,$-,Month,$-,Day,$T,Hour,$:,Min,$:,Sec,PM,TZHour], DT, Opts) when PM =:= $-; PM =:= $+ ->
+    parse([Year,$-,Month,$-,Day,$T,Hour,$:,Min,$:,Sec,PM,TZHour,$:,0], DT, Opts);
+parse([Year,$-,Month,$-,Day,$T,Hour,$:,Min,$:,Sec,$Z], _, _Opts) ->
+    calendar:universal_time_to_local_time({{Year, Month, Day}, {Hour, Min, Sec}});
 
 parse(_Tokens, _Now, _Opts) ->
     {error, bad_date}.
@@ -173,6 +207,7 @@ tokenise([$: | Rest], Acc) -> tokenise(Rest, [ $: | Acc]);
 tokenise([$/ | Rest], Acc) -> tokenise(Rest, [ $/ | Acc]);
 tokenise([$- | Rest], Acc) -> tokenise(Rest, [ $- | Acc]);
 tokenise([$\. | Rest], Acc) -> tokenise(Rest, [ $\. | Acc]);
+tokenise([$+ | Rest], Acc) -> tokenise(Rest, [ $+ | Acc]);
 tokenise("AM"++Rest, Acc)  -> tokenise(Rest, [am | Acc]);
 tokenise("PM"++Rest, Acc)  -> tokenise(Rest, [pm | Acc]);
 
@@ -214,6 +249,9 @@ tokenise("TH"++Rest, Acc)  -> tokenise(Rest, Acc);
 tokenise("ND"++Rest, Acc)  -> tokenise(Rest, Acc);
 tokenise("ST"++Rest, Acc)  -> tokenise(Rest, Acc);
 tokenise("OF"++Rest, Acc)  -> tokenise(Rest, Acc);
+
+tokenise([$T | Rest], Acc) -> tokenise(Rest, [$T | Acc]);
+tokenise([$Z | Rest], Acc) -> tokenise(Rest, [$Z | Acc]);
 
 tokenise([Else | Rest], Acc) ->
     tokenise(Rest, [{bad_token, Else} | Acc]).
@@ -458,6 +496,14 @@ pad2(X) when is_float(X) ->
 ltoi(X) ->
     list_to_integer(X).
 
+%% Normalise two digit years
+-spec to_year(integer()) -> integer().
+to_year(Y) when Y >= 60, Y < 100 -> Y + 1900;
+to_year(Y) when Y < 100 -> Y + 2000;
+to_year(Y) -> Y.
+
+
+
 %%
 %% TEST FUNCTIONS
 %%
@@ -559,6 +605,26 @@ parse_with_days_test_() ->
                    parse("Mon, 22 Aug 2008 6:35 PM", ?DATE))
     ].
 
+parse_ymd_test_() ->
+    [
+    ?_assertEqual({{2008,8,22}, {18,19,20}},
+                  parse("2008-08-22 18:19:20", ?DATE)),
+    ?_assertEqual({{2008,8,22}, {17,16,17}},
+                  parse("2008-08-22", ?DATE)),
+    ?_assertEqual({{2008,8,22}, {18,19,20}},
+                  parse("22-08-2008 18:19:20", ?DATE)),
+    ?_assertEqual({{2008,8,22}, {17,16,17}},
+                  parse("22-08-2008", ?DATE)),
+    ?_assertEqual({{1997,8,22}, {18,19,20}},
+                  parse("22-08-97 18:19:20", ?DATE)),
+    ?_assertEqual({{1997,8,22}, {17,16,17}},
+                  parse("22-08-97", ?DATE)),
+    ?_assertEqual({{2011,8,22}, {18,19,20}},
+                  parse("22-08-11 18:19:20", ?DATE)),
+    ?_assertEqual({{2011,8,22}, {17,16,17}},
+                  parse("22-08-11", ?DATE))
+    ].
+
 parse_with_TZ_test_() ->
     [
      ?_assertEqual({{2008,8,22}, {17,16,17}},
@@ -567,6 +633,14 @@ parse_with_TZ_test_() ->
                    parse("Sat 22nd of August 2008 UTC", ?DATE)),
      ?_assertEqual({{2008,8,22}, {17,16,17}},
                    parse("Sat 22nd of August 2008 DST", ?DATE))
+    ].
+
+parse_iso8601_test_() ->
+    [
+     ?_assertEqual(calendar:universal_time_to_local_time({{2008,8,22}, {17,16,17}}),
+                   parse("2008-08-22T17:16:17Z", ?DATE)),
+     ?_assertEqual(calendar:universal_time_to_local_time({{2008,8,22}, {16,16,17}}),
+                   parse("2008-08-22T17:16:17+01:00", ?DATE))
     ].
 
 iso_test_() ->
