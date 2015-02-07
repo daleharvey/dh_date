@@ -3,6 +3,7 @@
   {description, "Basic date formatting and parsing app"},
   {vsn, "1"},
   {registered, []},
+  {modules, []},
   {applications, [
                   kernel,
                   stdlib
