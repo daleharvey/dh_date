@@ -1,12 +1,15 @@
 {application, dh_date,
  [
-  {description, "Basic date formatting and parsing app"},
-  {vsn, "1"},
+  {description, "Basic date formatting and parsing app. Uses formatting rules of http://uk.php.net/date - (with some minor changes)"},
+  {vsn, "1.0.0"},
   {registered, []},
   {modules, []},
   {applications, [
                   kernel,
                   stdlib
                  ]},
-  {env, []}
+  {env, []},
+  {maintainers, ["Gordon Guthrie"]},
+  {licenses,    ["Do What You Want"]},
+  {links,       [{"Github", "https://github.com/daleharvey/dh_date"}]}
  ]}.
