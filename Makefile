@@ -1,27 +1,39 @@
+REBAR := $(shell which rebar3 2>/dev/null || echo ./rebar3)
+REBAR_URL := https://s3.amazonaws.com/rebar3/rebar3
+
 .PHONY: rel stagedevrel deps test
 
 all: deps compile
 
-compile:
-	./rebar compile
+compile: $(REBAR)
+	       $(REBAR) compile
 
-deps:
-	./rebar get-deps
+deps: $(REBAR)
+	    $(REBAR) get-deps
 
-clean:
-	./rebar clean
+clean: $(REBAR)
+	     $(REBAR) clean
 
-distclean: clean
-	./rebar delete-deps
-
-test:
-	./rebar compile eunit
+test: $(REBAR)
+	    $(REBAR) do compile, eunit
 
 ##
 ## Doc targets
 ##
-docs:
-	./rebar doc
+docs: $(REBAR)
+	$(REBAR) edoc
+
+doc_private: $(REBAR)
+	           $(REBAR) as doc_private edoc
+
+exdoc: $(REBAR)
+	           $(REBAR) ex_doc --output exdoc --formatter html
+
+./rebar3:
+	erl -noshell -s inets start -s ssl start \
+        -eval '{ok, saved_to_file} = httpc:request(get, {"$(REBAR_URL)", []}, [], [{stream, "./rebar3"}])' \
+        -s inets stop -s init stop
+	chmod +x ./rebar3
 
 APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
 	xmerl webtool snmp public_key mnesia eunit syntax_tools compiler

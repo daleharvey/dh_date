@@ -1,0 +1,6 @@
+@author Gordon Guthrie
+@author Dale Harvey <dale@hypernumbers.com>
+@author Marc Worrell <marc@worrell.nl>
+
+@title dh_date
+@doc Basic date formatting and parsing app. Uses formatting rules of [http://uk.php.net/date] - (with some minor changes)
