@@ -1,4 +1,8 @@
 _build/
 *~
 rebar.lock
-doc/
+doc/*
+!doc/style.css
+!doc/overview.edoc
+exdoc
+.vscode

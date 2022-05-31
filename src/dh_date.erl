@@ -3,17 +3,17 @@
 %% Licensed under the DWTFYW License
 %%
 %% This module formats erlang dates in the form
-%% {{Year, Month, Day}, {Hour, Minute, Second}}
+%% `{{Year, Month, Day}, {Hour, Minute, Second}}'
 %% to printable strings, using (almost) equivalent
-%% formatting rules as http://uk.php.net/date
+%% formatting rules as [http://uk.php.net/date]
 %%
 %% erlang has no concept of timezone so the following
-%% formats are not implemented: B e I O P T Z
-%% formats c and r will also differ slightly
+%% formats are not implemented: `B e I O P T Z'
+%% formats `c' and `r' will also differ slightly
 %%
 %% See tests at bottom for examples
 
-%% MW: Added support for ISO8601 and "Y-M-D H:I:S"
+%% MW: Added support for ISO8601 and `Y-M-D H:I:S'
 
 -module(dh_date).
 -author("Dale Harvey <dale@hypernumbers.com>").
@@ -576,7 +576,7 @@ basic_parse_test_() ->
      ?_assertEqual({{2001,3,10}, {6,45,0}},
                    parse("6:45 am", ?DATE)),
      ?_assertEqual({{2001,3,10}, {18,45,0}},
-                   parse("6:45 PM", ?DATE)),
+                   parse("6:45 pm", ?DATE)),
      ?_assertEqual({{2001,3,10}, {18,45,0}},
                    parse("6:45 PM ", ?DATE))
     ].
