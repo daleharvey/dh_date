@@ -9,8 +9,7 @@
 
 %% escript Entry point
 main(_Args) ->
-    % LocalTime = calendar:local_time(),
-    LocalTime = {{2022,2,3},{}},
+    LocalTime = calendar:local_time(),
     io:fwrite("~26s | ~8s | ~p~n", ["Descrption", "Format", element(1,LocalTime)]),
     io:format("~56c~n",[$-]),
 
@@ -122,6 +121,7 @@ main(_Args) ->
         print(Format, LocalTime, "DayOfWeek Day Month Year")
     end(),
 
+   
     erlang:halt(0).
 
 %%====================================================================
@@ -130,4 +130,4 @@ main(_Args) ->
 
 print(Format, LocalTime, Description) ->
     FormattedTime = dh_date:format(Format, LocalTime),
-    io:format("~26s | ~8s | ~16s~n", [Description, Format, FormattedTime]).
+    io:format("~26s | ~8s | ~18s~n", [Description, Format, FormattedTime]).
