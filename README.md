@@ -29,6 +29,6 @@ See unit tests in the source code for examples
 ## Generate private API
 `make doc_private` or `rebar3 as doc_private edoc`
 
-#ExDoc
+## ExDoc
 
 `make exdoc` or `rebar3 ex_doc --output exdoc --formatter html`
